@@ -1,50 +1,57 @@
-HERE WRITE YOUR CODE
-###
 #include <SoftwareSerial.h>
-SoftwareSerial sim900(7, 8); // RX, TX (Change pins if needed)
 
-#define SENSOR1_PIN A0 // First 24V sensor
-#define SENSOR2_PIN A1 // Second 24V sensor
-#define SENSOR6_PIN A5 // 110 V Detector
+SoftwareSerial sim900(7, 8); // RX, TX
+
+#define SENSOR1_PIN A0  // First 24V sensor
+#define SENSOR2_PIN A1  // Second 24V sensor
+#define SENSOR6_PIN A5  // 110V Detector
 #define RELAY 4
 #define TOGGLE_SWITCH 2 // SPDT switch for maintenance mode
+#define PWRKEY 9  // Pin to automate GSM power on
 
-#define VREF 5 // Arduino reference voltage (5V)
+#define VREF 5        
 #define SCALE_FACTOR 5.0
-#define THRESHOLD_24V 22.0 // Minimum voltage threshold for 24V system
+#define THRESHOLD_24V 22.0  
 
-const String Alert = "31 Test Advance Alert"; // Alert prefix
-const String COACH_NUMBER = "Coach No 1234"; // Coach number
+#define MOBILE_NUMBER "+918248261849"  // Define mobile number at the beginning
+
+const String Alert = "Advance Alert";  
+const String COACH_NUMBER = "Coach No: B1";  
 
 void setup() {
-    Serial.begin(9600); // Serial Monitor baud rate
-    sim900.begin(9600); // SIM900 baud rate
-    Serial.println("Initializing SIM900...");
-    delay(1000);
-
+    Serial.begin(9600);      
     pinMode(RELAY, OUTPUT);
-    pinMode(TOGGLE_SWITCH, INPUT_PULLUP); // Enable internal pull-up for SPDT switch
-    digitalWrite(RELAY, HIGH); // Default OFF state for relay
+    pinMode(TOGGLE_SWITCH, INPUT_PULLUP);
+    pinMode(PWRKEY, OUTPUT);
+
+    digitalWrite(RELAY, HIGH);  
+    powerOnGSM();  // Turn on GSM automatically
+
+    sim900.begin(9600);      
+    Serial.println("Initializing SIM900...");
+    delay(5000);
+
+    // Send a test SMS once GSM is connected
+    sendSMS(MOBILE_NUMBER, "GSM Module Connected Successfully!");
+    Serial.println("GSM Module Connected Successfully");
 }
 
 void loop() {
-    int switchState = digitalRead(TOGGLE_SWITCH); // Read toggle switch state
+    int switchState = digitalRead(TOGGLE_SWITCH);
 
     if (switchState == LOW) {  
         Serial.println("Maintenance Mode - No Alerts Sent");
+        sendSMS(MOBILE_NUMBER, "Maintenance Mode");
         delay(1000);
-        return; // Exit loop early, do nothing
+        return; 
     }
 
     Serial.println("System Active - Monitoring Voltage");
 
-    bool alertTriggered = false;
-    String faultMessage = "";
-
-    // Read voltage sensor values
     int sensorValue1 = analogRead(SENSOR1_PIN);
     int sensorValue2 = analogRead(SENSOR2_PIN);
     int sensorValue3 = digitalRead(SENSOR6_PIN);
+
     float voltage1 = (sensorValue1 / 1023.0) * VREF * SCALE_FACTOR;
     float voltage2 = (sensorValue2 / 1023.0) * VREF * SCALE_FACTOR;
     String State_110V = (sensorValue3 == LOW) ? "110 V Detected" : "110 V not Detected";
@@ -56,51 +63,36 @@ void loop() {
     Serial.println(State_110V);
     Serial.println("..................");
 
-    // Check for 24V supply failures
     if (voltage1 < THRESHOLD_24V) {
         Serial.println("24V Supply Failure to FDS");
-        faultMessage += "24 volt supply failure. Take action now!!\n";
-        alertTriggered = true;
+        sendSMS(MOBILE_NUMBER, Alert + "\n" + COACH_NUMBER + "\n24 volt supply failure. Take action now!!");
     }
     
     if (voltage2 < THRESHOLD_24V) {
         Serial.println("24V Battery Failure");
-        faultMessage += "Backup Battery Failure. Take action now!!\n";
-        alertTriggered = true;
+        sendSMS(MOBILE_NUMBER, Alert + "\n" + COACH_NUMBER + "\nBackup Battery Failure. Take action now!!");
     }
 
-    if (sensorValue3 != LOW)
-    {
-        faultMessage += "110 V not Detected. Take action now!!\n";
-        alertTriggered = true;  
+    if (sensorValue3 != LOW) {
+        Serial.println("110 V not detected");
+        sendSMS(MOBILE_NUMBER, Alert + "\n" + COACH_NUMBER + "\n110 V not Detected. Take action now!!");
     }
     
-    // Relay Control Logic
     if (voltage1 < THRESHOLD_24V && voltage2 > THRESHOLD_24V) {
         Serial.println("Relay ON - Brake Coil Powered by Backup Battery");
-        digitalWrite(RELAY, LOW); // Relay ON (Active)
-        faultMessage += "Relay Turned ON - Brake Coil Powered by Battery\n";
-        alertTriggered = true;
+        digitalWrite(RELAY, LOW);
+        sendSMS(MOBILE_NUMBER, Alert + "\n" + COACH_NUMBER + "\nRelay Turned ON - Brake Coil Powered by Battery");
     } 
     else {
         Serial.println("Relay OFF - No Backup Battery Support");
-        digitalWrite(RELAY, HIGH); // Relay OFF
+        digitalWrite(RELAY, HIGH);
     }
 
-    // Prepare the SMS message
-    String SMS_Alert = Alert + "\n" + COACH_NUMBER + "\n" + faultMessage;
-
-    // Send SMS if any alert is triggered
-    if (alertTriggered) {
-        sendSMS("+919944014459", SMS_Alert);
-
-    }
-
-    delay(1000); // Delay for stability
+    delay(1000); 
 }
 
 void sendSMS(String number, String message) {
-    sim900.println("AT+CMGF=1"); // Set SMS mode to text
+    sim900.println("AT+CMGF=1"); 
     delay(1000);
 
     sim900.print("AT+CMGS=\"");
@@ -111,7 +103,15 @@ void sendSMS(String number, String message) {
     sim900.print(message);
     delay(1000);
 
-    sim900.write(26); // Send Ctrl+Z to send message
+    sim900.write(26); 
     Serial.println("SMS Sent!");
 }
 
+void powerOnGSM() {
+    digitalWrite(PWRKEY, LOW);
+    delay(1000);
+    digitalWrite(PWRKEY, HIGH);
+    delay(2000);  
+    digitalWrite(PWRKEY, LOW);
+    Serial.println("GSM Module Powered On Automatically");
+}
